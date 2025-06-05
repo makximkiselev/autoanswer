@@ -1,0 +1,17 @@
+<form method="get">
+  <label for="country">Фильтр по стране:</label>
+  <select name="country" id="country">
+    <option value="">— Все —</option>
+    {% for c in available_countries %}
+      <option value="{{ c }}" {% if c == selected_country %}selected{% endif %}>{{ c }}</option>
+    {% endfor %}
+  </select>
+
+  <label for="sort">Сортировать по:</label>
+  <select name="sort" id="sort">
+    <option value="price" {% if sort == "price" %}selected{% endif %}>Цене</option>
+    <option value="date" {% if sort == "date" %}selected{% endif %}>Дате</option>
+  </select>
+
+  <button type="submit">Применить</button>
+</form>

@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Редактор моделей</title>
+    <style>
+        table {
+            border-collapse: collapse;
+            width: 100%;
+        }
+        th, td {
+            border: 1px solid #ccc;
+            padding: 8px;
+        }
+        th {
+            background-color: #f0f0f0;
+        }
+        input[type="text"] {
+            width: 100%;
+            box-sizing: border-box;
+        }
+    </style>
+</head>
+<body>
+    <h2>🔧 Редактирование моделей</h2>
+
+    <form method="get" action="/cleaner">
+        <input type="text" name="q" placeholder="Поиск модели..." value="{{ request.query_params.get('q', '') }}">
+        <button type="submit">🔍 Найти</button>
+        <a href="/cleaner">🔄 Сброс</a>
+    </form>
+
+    <br>
+    <form action="/cleaner/bulk-update" method="post">
+        <table>
+            <thead>
+                <tr>
+                    <th></th>
+                    <th>ID</th>
+                    <th>Оригинальное название</th>
+                    <th>Эталонная модель</th>
+                    <th>Обновить</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for id, name, std in items %}
+                <tr>
+                    <td><input type="checkbox" name="selected_ids" value="{{ id }}"></td>
+                    <td>{{ id }}</td>
+                    <td>{{ name }}</td>
+                    <td>
+                        <form action="/cleaner/update" method="post">
+                            <input type="hidden" name="product_id" value="{{ id }}">
+                            <input type="text" name="new_standard" value="{{ std }}" list="stdlist">
+                    </td>
+                    <td>
+                            <button type="submit">Сохранить</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <br>
+        <h4>Объединить выбранные модели</h4>
+        <input type="text" name="new_standard_bulk" placeholder="Новая эталонная модель" list="stdlist" required>
+        <button type="submit">🔗 Объединить</button>
+    </form>
+
+    <nav style="margin-bottom: 1em;">
+        <a href="/" style="margin-right: 1em;">🏠 Главная</a>
+        <a href="/matrix" style="margin-right: 1em;">📊 Прайс-матрица</a>
+        <a href="/cleaner" style="margin-right: 1em;">🧹 Очистка моделей</a>
+        <a href="/unknowns">🧠 Неопознанные</a>
+    </nav>
+
+    <datalist id="stdlist">
+        {% set unique_std = items | map(attribute=2) | unique | list %}
+        {% for std in unique_std %}
+            <option value="{{ std }}">
+        {% endfor %}
+    </datalist>
+
+    <script>
+        document.querySelectorAll('form[action="/cleaner/update"]').forEach(form => {
+            form.addEventListener('submit', () => {
+                const text = form.querySelector('input[name="new_standard"]').value.toLowerCase();
+                const lineup = ['iphone', 'ipad', 'watch', 'macbook', 'galaxy', 'note', 'pixel'].find(k => text.includes(k));
+                const regionMatch = text.match(/\b(ch|us|eu|hk|ae|my|jp|kr)\b/);
+                console.log('🧩 Автодетект:', { lineup, region: regionMatch ? regionMatch[0] : null });
+            });
+        });
+    </script>
+
+    <br>
+    <a href="/">⬅️ Назад</a>
+</body>
+</html>

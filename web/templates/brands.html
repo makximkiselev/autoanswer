@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Бренды</title>
+</head>
+<body>
+  <h1>📊 Сводка по брендам</h1>
+  <a href="/">← Назад к категориям</a>
+  <ul>
+    {% for brand, count in brands %}
+      <li><a href="/brand/{{ brand }}">{{ brand }}</a> — {{ count }} моделей</li>
+    {% endfor %}
+  </ul>
+</body>
+</html>

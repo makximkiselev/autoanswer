@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Главная</title>
+    <style>
+        body { font-family: sans-serif; padding: 40px; }
+        button { font-size: 1em; padding: 8px 16px; margin-bottom: 10px; }
+        a.button-link {
+            display: inline-block;
+            margin-bottom: 10px;
+            font-size: 1em;
+            padding: 8px 16px;
+            background-color: #f0f0f0;
+            text-decoration: none;
+            color: black;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <h1>📊 Telegram Price Parser</h1>
+
+    <form method="get" action="/run-parser">
+        <button type="submit">📥 Собрать прайсы</button>
+    </form>
+
+    <form method="get" action="/matrix">
+        <button type="submit">📈 Сравнить цены</button>
+    </form>
+
+    <form method="post" action="/clear">
+        <button type="submit" style="color:red">🗑️ Очистить базу</button>
+    </form>
+
+    <hr>
+
+    <a class="button-link" href="/unknowns">🧠 Неопознанные модели</a><br>
+    <a class="button-link" href="/cleaner">🧹 Очистка моделей</a><br>
+    <a class="button-link" href="/reports">📊 Отчёты по запросам</a><br>
+    <a class="button-link" href="/settings">⚙️ Настройки автоответов</a><br>
+    <a class="button-link" href="{{ review_link }}">🧪 Проверка автоответов</a><br>
+    <a class="button-link" href="/sources">📡 Управление источниками</a><br>
+
+    {% if message %}
+        <p><strong>{{ message }}</strong></p>
+    {% endif %}
+</body>
+</html>

@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Сравнение цен</title>
+    <style>
+        body {
+            font-family: sans-serif;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin-bottom: 20px;
+        }
+        th, td {
+            border: 1px solid #ccc;
+            padding: 6px;
+            text-align: left;
+        }
+        th {
+            background: #f5f5f5;
+        }
+        .brand {
+            font-size: 1.3em;
+            margin-top: 20px;
+            font-weight: bold;
+        }
+        .lineup {
+            margin-top: 10px;
+            font-size: 1.1em;
+            padding-left: 20px;
+            font-weight: bold;
+        }
+        .model {
+            padding-left: 40px;
+        }
+    </style>
+</head>
+<body>
+<h2>📊 Сравнение цен по моделям</h2>
+
+<form method="get" action="/matrix">
+    <label>Бренд:</label>
+    <input type="text" name="brand" value="{{ filter_brand }}">
+    <label>Модель:</label>
+    <input type="text" name="model" value="{{ filter_model }}">
+    <button type="submit">🔍 Фильтр</button>
+    <a href="/matrix">🔄 Сброс</a>
+</form>
+
+<hr>
+
+{% for brand, lineups in tree.items() %}
+    <div class="brand">{{ brand | capitalize }}</div>
+    {% for lineup, models in lineups.items() %}
+        <div class="lineup">{{ lineup | capitalize }}</div>
+        <table>
+            <thead>
+                <tr>
+                    <th class="model">Модель</th>
+                    {% for channel in channels %}
+                        <th>{{ channel }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for model, prices in models.items() %}
+                    <tr>
+                        <td class="model">{{ model }}</td>
+                        {% for channel in channels %}
+                            <td>
+                                {% if prices[channel] is defined %}
+                                    {{ prices[channel] }}
+                                {% else %}
+                                    –
+                                {% endif %}
+                            </td>
+                        {% endfor %}
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% endfor %}
+{% endfor %}
+
+<nav style="margin-bottom: 1em;">
+    <a href="/" style="margin-right: 1em;">🏠 Главная</a>
+    <a href="/matrix" style="margin-right: 1em;">📊 Прайс-матрица</a>
+    <a href="/cleaner" style="margin-right: 1em;">🧹 Очистка моделей</a>
+    <a href="/unknowns">🧠 Неопознанные</a>
+</nav>
+
+</body>
+</html>

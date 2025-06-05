@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Ответы ИИ</title>
+</head>
+<body>
+    <h1>🤖 Ответы ИИ (ожидают подтверждения)</h1>
+    {% if messages %}
+        <ul>
+        {% for msg in messages %}
+            <li>
+                <strong>ID {{ msg[0] }}</strong>:<br>
+                {{ msg[2] }}<br>
+                <form action="/approve" method="post" style="display:inline">
+                    <input type="hidden" name="message_id" value="{{ msg[0] }}">
+                    <input type="hidden" name="is_ok" value="1">
+                    <button type="submit">✅ OK</button>
+                </form>
+                <form action="/approve" method="post" style="display:inline">
+                    <input type="hidden" name="message_id" value="{{ msg[0] }}">
+                    <input type="hidden" name="is_ok" value="0">
+                    <button type="submit">❌ Не OK</button>
+                </form>
+            </li><br>
+        {% endfor %}
+        </ul>
+    {% else %}
+        <p>Нет сообщений, ожидающих подтверждения.</p>
+    {% endif %}
+    <br>
+    <form method="get" action="/">
+        <button type="submit">🏠 На главную</button>
+    </form>
+</body>
+</html>

@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Нераспознанные модели</title>
+    <meta charset="UTF-8" />
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 2em; }
+        th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+        th { background-color: #f5f5f5; }
+        input[type="text"] { width: 100%; padding: 4px; box-sizing: border-box; }
+        .form-row { display: grid; grid-template-columns: repeat(5, 1fr) auto; gap: 8px; align-items: center; }
+        .form-row input[type="submit"] { padding: 6px 12px; }
+    </style>
+</head>
+<body>
+    <h1>📦 Нераспознанные модели</h1>
+
+    <h2>📘 Массовая обработка</h2>
+    <form action="/unknowns/add-mass" method="post" style="margin-bottom: 2em;">
+        <div class="form-row">
+            <input type="text" name="brand" placeholder="Бренд" required>
+            <input type="text" name="lineup" placeholder="Линейка">
+            <input type="text" name="model" placeholder="Модель" required>
+            <input type="text" name="region" placeholder="Регион">
+            <input type="submit" value="Добавить все подходящие">
+        </div>
+    </form>
+
+    <h2>🔍 Индивидуальные модели</h2>
+    {% for id, raw_name, channel, date, price in items %}
+        <form action="/unknowns/add" method="post" style="margin-bottom: 1em;">
+            <input type="hidden" name="item_id" value="{{ id }}">
+            <div class="form-row">
+                <div><strong>{{ raw_name }}</strong><br><small>{{ channel }} — {{ date }} — {{ price }}₽</small></div>
+                <input type="text" name="brand" placeholder="Бренд" required>
+                <input type="text" name="lineup" placeholder="Линейка">
+                <input type="text" name="model" placeholder="Модель" required>
+                <input type="text" name="region" placeholder="Регион">
+                <input type="submit" value="Добавить">
+            </div>
+        </form>
+    {% else %}
+        <p>✅ Все модели распознаны — список пуст.</p>
+    {% endfor %}
+
+<datalist id="brands">
+  {% for b in brands %}
+    <option value="{{ b }}">
+  {% endfor %}
+</datalist>
+
+<datalist id="lineups">
+  {% for l in lineups %}
+    <option value="{{ l }}">
+  {% endfor %}
+</datalist>
+
+<datalist id="regions">
+  {% for r in regions %}
+    <option value="{{ r }}">
+  {% endfor %}
+</datalist>
+
+<input type="text" name="brand" list="brands" placeholder="Бренд" required>
+<input type="text" name="lineup" list="lineups" placeholder="Линейка">
+<input type="text" name="region" list="regions" placeholder="Регион">
+
+<nav style="margin-bottom: 1em;">
+    <a href="/" style="margin-right: 1em;">🏠 Главная</a>
+    <a href="/matrix" style="margin-right: 1em;">📊 Прайс-матрица</a>
+    <a href="/cleaner" style="margin-right: 1em;">🧹 Очистка моделей</a>
+    <a href="/unknowns">🧠 Неопознанные</a>
+</nav>
+
+</body>
+</html>

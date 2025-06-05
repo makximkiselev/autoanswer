@@ -1,0 +1,22 @@
+# Byte-compiled / cache files
+__pycache__/
+*.py[cod]
+
+# Virtual environment
+.venv/
+env/
+venv/
+
+# Environment variables
+.env
+
+# Telethon session files
+sessions/*.session*
+*.sqlite
+
+# Alembic
+alembic/__pycache__/
+
+# VSCode / IDE
+.vscode/
+.idea/

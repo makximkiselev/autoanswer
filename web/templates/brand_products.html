@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>{{ brand }}</title>
+</head>
+<body>
+  <h1>📱 {{ brand }} — товары</h1>
+  <a href="/brands">← Назад к брендам</a>
+  <ul>
+    {% for name in products %}
+      <li><a href="/product/{{ name | urlencode }}">{{ name }}</a></li>
+    {% endfor %}
+  </ul>
+</body>
+</html>
