@@ -1,94 +1,80 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <title>Сравнение цен</title>
+    <meta charset="utf-8">
+    <title>📊 Прайс-матрица</title>
     <style>
-        body {
-            font-family: sans-serif;
-        }
-        table {
-            border-collapse: collapse;
-            width: 100%;
-            margin-bottom: 20px;
-        }
-        th, td {
-            border: 1px solid #ccc;
-            padding: 6px;
-            text-align: left;
-        }
-        th {
-            background: #f5f5f5;
-        }
-        .brand {
-            font-size: 1.3em;
-            margin-top: 20px;
-            font-weight: bold;
-        }
-        .lineup {
-            margin-top: 10px;
-            font-size: 1.1em;
-            padding-left: 20px;
-            font-weight: bold;
-        }
-        .model {
-            padding-left: 40px;
-        }
+        body { font-family: sans-serif; padding: 20px; }
+        h2, h3 { margin-top: 1em; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 2em; }
+        th, td { border: 1px solid #ccc; padding: 6px 10px; text-align: left; }
+        th { background-color: #f5f5f5; }
     </style>
 </head>
 <body>
-<h2>📊 Сравнение цен по моделям</h2>
+    <h1>📊 Прайс-матрица</h1>
+    <button onclick="cleanProducts()">🧹 Очистить невалидные привязки</button>
 
-<form method="get" action="/matrix">
-    <label>Бренд:</label>
-    <input type="text" name="brand" value="{{ filter_brand }}">
-    <label>Модель:</label>
-    <input type="text" name="model" value="{{ filter_model }}">
-    <button type="submit">🔍 Фильтр</button>
-    <a href="/matrix">🔄 Сброс</a>
-</form>
-
-<hr>
-
-{% for brand, lineups in tree.items() %}
-    <div class="brand">{{ brand | capitalize }}</div>
-    {% for lineup, models in lineups.items() %}
-        <div class="lineup">{{ lineup | capitalize }}</div>
-        <table>
-            <thead>
-                <tr>
-                    <th class="model">Модель</th>
-                    {% for channel in channels %}
-                        <th>{{ channel }}</th>
-                    {% endfor %}
-                </tr>
-            </thead>
-            <tbody>
-                {% for model, prices in models.items() %}
-                    <tr>
-                        <td class="model">{{ model }}</td>
-                        {% for channel in channels %}
+    {% for category, brands in tree.items() %}
+        <h2>{{ category }}</h2>
+        {% for brand, models in brands.items() %}
+            <h3>{{ brand }}</h3>
+            {% for model, products in models.items() %}
+                <h4>{{ model }}</h4>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Товар</th>
+                            <th>name_std</th>
+                            <th>Мин. цена</th>
+                            <th>Цены по регионам</th>
+                            <th>Кол-во цен</th>
+                            <th>Действие</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for p in products %}
+                        <tr>
+                            <td>{{ p.product }}</td>
+                            <td>{{ p.name_std }}</td>
+                            <td>{{ p.min_price or "-" }}</td>
+                            <td>{{ p.prices or "-" }}</td>
+                            <td>{{ p.price_count }}</td>
                             <td>
-                                {% if prices[channel] is defined %}
-                                    {{ prices[channel] }}
-                                {% else %}
-                                    –
-                                {% endif %}
+                                <form method="post" action="/matrix/unlink" style="display:inline;">
+                                    <input type="hidden" name="cleaned_id" value="{{ p.cleaned_id }}">
+                                    <button type="submit" onclick="return confirm('Уверены, что хотите отменить привязку?')">❌</button>
+                                </form>
                             </td>
+                        </tr>
                         {% endfor %}
-                    </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+                    </tbody>
+                </table>
+            {% endfor %}
+        {% endfor %}
     {% endfor %}
-{% endfor %}
 
-<nav style="margin-bottom: 1em;">
-    <a href="/" style="margin-right: 1em;">🏠 Главная</a>
-    <a href="/matrix" style="margin-right: 1em;">📊 Прайс-матрица</a>
-    <a href="/cleaner" style="margin-right: 1em;">🧹 Очистка моделей</a>
-    <a href="/unknowns">🧠 Неопознанные</a>
-</nav>
+    <nav>
+        <a href="/">🏠 Главная</a>
+        <a href="/unknowns" style="margin-left: 1em;">🧠 Неопознанные</a>
+    </nav>
+
+<script>
+async function cleanProducts() {
+    try {
+        const res = await fetch("/admin/clean-products");
+        const data = await res.json();
+        if (data.ok) {
+            alert("🧹 Удалено привязок: " + data.deleted);
+            location.reload();
+        } else {
+            alert("⚠️ Ошибка при очистке.");
+        }
+    } catch (e) {
+        alert("❌ Ошибка запроса");
+    }
+}
+</script>
 
 </body>
 </html>

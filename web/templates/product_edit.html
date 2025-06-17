@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Редактирование товара</title>
+    <style>
+        body { font-family: system-ui, sans-serif; padding: 40px; max-width: 800px; margin: auto; background: #f9f9f9; }
+        h1 { font-size: 1.5em; }
+        input[type="text"], input[type="file"] { width: 100%; padding: 8px; margin-bottom: 12px; }
+        button { padding: 10px 16px; font-size: 1em; }
+        .list-block { margin-bottom: 2em; }
+        .list-block input { margin-bottom: 6px; }
+        label { font-weight: bold; display: block; margin-bottom: 6px; }
+    </style>
+    <script>
+        function addField(containerId, name) {
+            const div = document.createElement("div");
+            div.innerHTML = `<input type="text" name="${name}" placeholder="URL..." />`;
+            document.getElementById(containerId).appendChild(div);
+        }
+    </script>
+</head>
+<body>
+
+<h1>✏️ Редактирование товара</h1>
+
+<form method="post" action="/catalog/product/{{ product.id }}/edit" enctype="multipart/form-data">
+    <label>Название товара:</label>
+    <input type="text" name="name" value="{{ product.name }}" required>
+
+    <label>Артикул:</label>
+    <input type="text" name="article" value="{{ product.article or '' }}">
+
+    <div class="list-block">
+        <label>🖼 Изображения:</label>
+        <div id="images">
+            {% for img in product.images %}
+                <input type="text" name="image_urls" value="{{ img }}" />
+            {% endfor %}
+        </div>
+        <button type="button" onclick="addField('images', 'image_urls')">+ Добавить ссылку</button>
+
+        <p><strong>или загрузить файлы:</strong></p>
+        <input type="file" name="image_files" multiple>
+    </div>
+
+    <div class="list-block">
+        <label>🔗 Ссылки на конкурентов:</label>
+        <div id="links">
+            {% for link in product.links %}
+                <input type="text" name="links" value="{{ link }}" />
+            {% endfor %}
+        </div>
+        <button type="button" onclick="addField('links', 'links')">+ Добавить ссылку</button>
+    </div>
+
+    <div class="list-block">
+        <label>📋 Характеристики:</label>
+        {% if product.features %}
+            {% for f in product.features %}
+                <div>
+                    <label>{{ f.name }}</label>
+                    <input type="text" name="feature_{{ f.feature_id }}" value="{{ f.value or '' }}">
+                </div>
+            {% endfor %}
+        {% else %}
+            <p style="color: #777;">Нет характеристик для этой категории. Добавьте их в master_features.</p>
+        {% endif %}
+    </div>
+
+    <button type="submit">💾 Сохранить</button>
+</form>
+
+<nav style="margin-top: 2em;">
+    <a href="/catalog/product/{{ product.id }}">← Назад к товару</a>
+</nav>
+
+</body>
+</html>

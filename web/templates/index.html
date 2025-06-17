@@ -2,46 +2,69 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Главная</title>
+    <title>UP&iBB Group</title>
     <style>
-        body { font-family: sans-serif; padding: 40px; }
-        button { font-size: 1em; padding: 8px 16px; margin-bottom: 10px; }
-        a.button-link {
-            display: inline-block;
-            margin-bottom: 10px;
+        body { font-family: sans-serif; padding: 40px; background-color: #f9f9f9; }
+        h1 { margin-bottom: 20px; }
+        h2 { margin-top: 30px; }
+        .section { margin-bottom: 30px; }
+        .button-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        a.button-link, button {
             font-size: 1em;
             padding: 8px 16px;
-            background-color: #f0f0f0;
             text-decoration: none;
             color: black;
+            background-color: #e0e0e0;
             border: 1px solid #ccc;
-            border-radius: 4px;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        a.button-link:hover, button:hover {
+            background-color: #d0d0d0;
         }
     </style>
 </head>
 <body>
-    <h1>📊 Telegram Price Parser</h1>
+    <h1>📊 UP&iBB Group</h1>
 
-    <form method="get" action="/run-parser">
-        <button type="submit">📥 Собрать прайсы</button>
-    </form>
+    <div class="section">
+        <h2>📦 Каталог</h2>
+        <div class="button-group">
+            <a class="button-link" href="/catalog">📦 Каталог товаров</a>
+            <a class="button-link" href="/catalog/edit">🛠 Управление каталогом</a>
+            <a class="button-link" href="/unknowns">🧠 Неопознанные модели</a>
+            <a class="button-link" href="/bindings">🔗 Управление привязками</a>
+        </div>
+    </div>
 
-    <form method="get" action="/matrix">
-        <button type="submit">📈 Сравнить цены</button>
-    </form>
+    <div class="section">
+        <h2>💰 Цены</h2>
+        <div class="button-group">
+            <form method="get" action="/monitoring"><button type="submit">📡 Мониторинг цен</button></form>
+            <form method="get" action="/matrix"><button type="submit">📈 Сравнение цен</button></form>
+            <a class="button-link" href="/sources">📡 Управление источниками</a>
+        </div>
+    </div>
 
-    <form method="post" action="/clear">
-        <button type="submit" style="color:red">🗑️ Очистить базу</button>
-    </form>
+    <div class="section">
+        <h2>🤖 Автоответы</h2>
+        <div class="button-group">
+            <a class="button-link" href="{{ review_link }}">🧪 Проверка автоответов</a>
+            <a class="button-link" href="/settings">⚙️ Настройка автоответов</a>
+        </div>
+    </div>
 
-    <hr>
-
-    <a class="button-link" href="/unknowns">🧠 Неопознанные модели</a><br>
-    <a class="button-link" href="/cleaner">🧹 Очистка моделей</a><br>
-    <a class="button-link" href="/reports">📊 Отчёты по запросам</a><br>
-    <a class="button-link" href="/settings">⚙️ Настройки автоответов</a><br>
-    <a class="button-link" href="{{ review_link }}">🧪 Проверка автоответов</a><br>
-    <a class="button-link" href="/sources">📡 Управление источниками</a><br>
+    <div class="section">
+        <h2>📈 Статистика</h2>
+        <div class="button-group">
+            <a class="button-link" href="/reports">📊 Отчёты по запросам</a>
+        </div>
+    </div>
 
     {% if message %}
         <p><strong>{{ message }}</strong></p>

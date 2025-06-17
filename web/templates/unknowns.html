@@ -1,77 +1,225 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Нераспознанные модели</title>
+    <title>Немодерированные товары</title>
     <meta charset="UTF-8" />
     <style>
         body { font-family: sans-serif; padding: 20px; }
         table { width: 100%; border-collapse: collapse; margin-bottom: 2em; }
         th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
         th { background-color: #f5f5f5; }
-        input[type="text"] { width: 100%; padding: 4px; box-sizing: border-box; }
-        .form-row { display: grid; grid-template-columns: repeat(5, 1fr) auto; gap: 8px; align-items: center; }
-        .form-row input[type="submit"] { padding: 6px 12px; }
+        .confirm-btn {
+            background-color: #d4edda;
+            color: #155724;
+            border: none;
+            padding: 6px 12px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        .confirm-btn.confirmed {
+            background-color: #28a745;
+            color: white;
+        }
+        .add-product-btn {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        input[type="text"], select {
+            width: 100%;
+            padding: 6px;
+            box-sizing: border-box;
+        }
+        #modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+        }
+        #modal-content {
+            background: white;
+            width: 400px;
+            margin: 100px auto;
+            padding: 20px;
+            border-radius: 10px;
+            position: relative;
+        }
+        #modal-content button.close {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            border: none;
+            background: transparent;
+            font-size: 20px;
+            cursor: pointer;
+        }
+        #load-more {
+            display: block;
+            margin: 1.5em auto;
+            padding: 10px 20px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
     </style>
 </head>
 <body>
-    <h1>📦 Нераспознанные модели</h1>
-
-    <h2>📘 Массовая обработка</h2>
-    <form action="/unknowns/add-mass" method="post" style="margin-bottom: 2em;">
-        <div class="form-row">
-            <input type="text" name="brand" placeholder="Бренд" required>
-            <input type="text" name="lineup" placeholder="Линейка">
-            <input type="text" name="model" placeholder="Модель" required>
-            <input type="text" name="region" placeholder="Регион">
-            <input type="submit" value="Добавить все подходящие">
-        </div>
+<h1>🧠 Немодерированные товары
+    <form method="post" action="/unknowns/clear-unmatched" onsubmit="return confirm('Удалить все необработанные модели?');" style="display:inline;">
+        <button style="margin-left: 20px; background-color: #dc3545; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer;">🧹 Очистить данные</button>
     </form>
+</h1>
+<form action="/unknowns/approve" method="post" onsubmit="collectFormData()">
+    <table>
+        <thead>
+            <tr>
+                <th>Название</th>
+                <th>Поиск модели</th>
+                <th>Привязка</th>
+                <th>Регион</th>
+                <th>Добавить товар</th>
+                <th>Исключить</th>
+            </tr>
+        </thead>
+        <tbody id="unknowns-table-body">
+            <!-- Сюда будут подгружаться записи через JS -->
+        </tbody>
+    </table>
+    <input type="hidden" name="approved_ids" id="approved_ids">
+    <input type="hidden" name="model_ids" id="model_ids">
+    <button type="submit">📂 Сохранить</button>
+</form>
+<button id="load-more" onclick="loadMore()">🔄 Загрузить ещё</button>
 
-    <h2>🔍 Индивидуальные модели</h2>
-    {% for id, raw_name, channel, date, price in items %}
-        <form action="/unknowns/add" method="post" style="margin-bottom: 1em;">
-            <input type="hidden" name="item_id" value="{{ id }}">
-            <div class="form-row">
-                <div><strong>{{ raw_name }}</strong><br><small>{{ channel }} — {{ date }} — {{ price }}₽</small></div>
-                <input type="text" name="brand" placeholder="Бренд" required>
-                <input type="text" name="lineup" placeholder="Линейка">
-                <input type="text" name="model" placeholder="Модель" required>
-                <input type="text" name="region" placeholder="Регион">
-                <input type="submit" value="Добавить">
-            </div>
-        </form>
-    {% else %}
-        <p>✅ Все модели распознаны — список пуст.</p>
-    {% endfor %}
-
-<datalist id="brands">
-  {% for b in brands %}
-    <option value="{{ b }}">
-  {% endfor %}
-</datalist>
-
-<datalist id="lineups">
-  {% for l in lineups %}
-    <option value="{{ l }}">
-  {% endfor %}
-</datalist>
-
-<datalist id="regions">
-  {% for r in regions %}
-    <option value="{{ r }}">
-  {% endfor %}
-</datalist>
-
-<input type="text" name="brand" list="brands" placeholder="Бренд" required>
-<input type="text" name="lineup" list="lineups" placeholder="Линейка">
-<input type="text" name="region" list="regions" placeholder="Регион">
-
-<nav style="margin-bottom: 1em;">
-    <a href="/" style="margin-right: 1em;">🏠 Главная</a>
-    <a href="/matrix" style="margin-right: 1em;">📊 Прайс-матрица</a>
-    <a href="/cleaner" style="margin-right: 1em;">🧹 Очистка моделей</a>
-    <a href="/unknowns">🧠 Неопознанные</a>
+<nav style="margin-top: 2em;">
+    <a href="/">🏠 Главная</a>
+    <a href="/matrix" style="margin-left: 1em;">📊 Прайс-матрица</a>
 </nav>
 
+<!-- Модалка -->
+<div id="modal">
+    <div id="modal-content">
+        <button class="close" onclick="closeModal()">&times;</button>
+        <h3>Создать и привязать товар</h3>
+        <form action="/unknowns/create-and-confirm" method="post">
+            <input type="hidden" name="unmatched_id" id="modal_unmatched_id" />
+            <label>Категория:<br>
+                <select name="category_id" required>
+                    <option value="">Выберите категорию</option>
+                    {% for cat in categories %}
+                        <option value="{{ cat[0] }}">{{ cat[1] }}</option>
+                    {% endfor %}
+                </select>
+            </label><br><br>
+            <label>Бренд:<br>
+                <input name="brand_name" list="brands-list" required>
+                <datalist id="brands-list">
+                    {% for brand in brands %}
+                        <option value="{{ brand[0] }}">
+                    {% endfor %}
+                </datalist>
+            </label><br><br>
+            <label>Модель:<br>
+                <input name="model_name" list="models-list" required>
+                <datalist id="models-list">
+                    {% for model in models %}
+                        <option value="{{ model[0] }}">
+                    {% endfor %}
+                </datalist>
+            </label><br><br>
+            <label>Название товара:<br>
+                <input type="text" name="product_name" required>
+            </label><br><br>
+            <label>Регион:<br>
+                <input name="region_code" list="regions-list">
+                <datalist id="regions-list">
+                    {% for region in regions %}
+                        <option value="{{ region.code }}">{{ region.flag or '' }} {{ region.name }}</option>
+                    {% endfor %}
+                </datalist>
+            </label><br><br>
+            <button type="submit">💾 Создать и привязать</button>
+        </form>
+    </div>
+</div>
+
+<script>
+let currentPage = 1;
+
+function loadMore() {
+    fetch(`/unknowns/api/rows?page=${currentPage}`)
+        .then(res => res.text())
+        .then(html => {
+            document.getElementById('unknowns-table-body').insertAdjacentHTML('beforeend', html);
+            currentPage++;
+        });
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+    loadMore(); // Подгружаем первую порцию сразу
+});
+
+function searchModel(input, listId) {
+    const query = input.value.trim();
+    const list = document.getElementById(listId);
+    list.innerHTML = '';
+    if (query.length < 2) return;
+    fetch(`/api/catalog/search?q=${encodeURIComponent(query)}`)
+        .then(res => res.json())
+        .then(items => {
+            for (const item of items) {
+                const opt = document.createElement('option');
+                opt.value = item.id;
+                opt.textContent = item.name;
+                list.appendChild(opt);
+            }
+            const confirmBtn = input.closest("tr").querySelector(".confirm-btn");
+            confirmBtn.disabled = false;
+        })
+        .catch(() => {
+            const confirmBtn = input.closest("tr").querySelector(".confirm-btn");
+            confirmBtn.disabled = true;
+        });
+}
+
+function confirmProduct(button) {
+    button.textContent = "Подтверждено";
+    button.classList.add("confirmed");
+    button.disabled = true;
+}
+
+function openModal(id) {
+    document.getElementById("modal_unmatched_id").value = id;
+    document.getElementById("modal").style.display = "block";
+}
+
+function closeModal() {
+    document.getElementById("modal").style.display = "none";
+}
+
+function collectFormData() {
+    const rows = document.querySelectorAll('tbody tr');
+    const approvedIds = [];
+    const modelPairs = [];
+    rows.forEach(row => {
+        const btn = row.querySelector(".confirm-btn.confirmed");
+        const sel = row.querySelector("select[name^='model_select_']");
+        if (btn && sel && sel.value) {
+            const id = sel.name.replace('model_select_', '');
+            approvedIds.push(id);
+            modelPairs.push(`${id}:${sel.value}`);
+        }
+    });
+    document.getElementById('approved_ids').value = approvedIds.join(',');
+    document.getElementById('model_ids').value = modelPairs.join(',');
+}
+</script>
 </body>
 </html>

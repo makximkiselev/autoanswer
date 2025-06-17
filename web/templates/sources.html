@@ -8,10 +8,49 @@
     input, select, button { margin: 5px; padding: 5px; }
     table { border-collapse: collapse; margin-top: 20px; }
     th, td { border: 1px solid #ccc; padding: 8px; }
+    #parserStatus { display: none; margin-left: 10px; color: green; }
+    #parserError { display: none; margin-left: 10px; color: red; }
   </style>
+  <script>
+    async function handleParserStart(e) {
+      e.preventDefault();
+      const button = document.getElementById('parserButton');
+      const status = document.getElementById('parserStatus');
+      const error = document.getElementById('parserError');
+      button.disabled = true;
+      status.style.display = 'inline';
+      error.style.display = 'none';
+
+      try {
+        const response = await fetch('/run-parser');
+        if (!response.ok) throw new Error("Ошибка запуска парсера");
+        const result = await response.text();
+        status.innerText = '✅ Парсинг запущен';
+        setTimeout(() => {
+          button.disabled = false;
+          status.style.display = 'none';
+          status.innerText = '⏳ Парсинг...';
+        }, 5000);
+      } catch (err) {
+        error.innerText = '❌ Ошибка при запуске парсера';
+        error.style.display = 'inline';
+        button.disabled = false;
+        status.style.display = 'none';
+      }
+    }
+  </script>
 </head>
 <body>
   <h1>Список источников</h1>
+
+  <p>
+    <a href="/" style="margin-right: 20px;">⬅️ На главную</a>
+    <form method="get" onsubmit="handleParserStart(event);" style="display:inline;">
+      <button id="parserButton" type="submit">🔁 Собрать прайс</button>
+      <span id="parserStatus">⏳ Парсинг...</span>
+      <span id="parserError"></span>
+    </form>
+  </p>
 
   {% if status == 'ok' %}
     <p style="color: green;">✅ Источник успешно добавлен!</p>
@@ -23,43 +62,68 @@
     <p style="color: red;">🔥 Системная ошибка при добавлении источника.</p>
   {% endif %}
 
-  <!-- ✅ Обновлённая форма с поддержкой флага monitored -->
   <form action="/sources/form" method="post">
     <input type="text" name="name" placeholder="Имя канала или чата" required>
-    <select name="type">
-      <option value="channel">Канал</option>
-      <option value="chat">Чат</option>
-    </select>
     <label><input type="checkbox" name="monitored" checked> Слушать</label>
     <button type="submit">Добавить</button>
   </form>
+  <!-- ⚠️ Тип источника определяется автоматически на сервере -->
+
+  {% if matches %}
+    <h3>🔍 Найдено совпадений:</h3>
+    <ul>
+      {% for m in matches %}
+        <li><b>{{ m.name }}</b> ({{ m.type }}, ID: {{ m.id }})
+          <form method="post" action="/sources/confirm-source" style="display:inline;">
+            <input type="hidden" name="name" value="{{ name }}">
+            <input type="hidden" name="type" value="{{ m.type }}">
+            <input type="hidden" name="channel_id" value="{{ m.id }}">
+            <input type="hidden" name="monitored" value="{{ 'on' if monitored else '' }}">
+            <input type="hidden" name="account_id" value="{{ m.account_id }}">
+            <button type="submit">✅ Добавить</button>
+          </form>
+        </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
 
   <h2>📢 Каналы</h2>
   <ul>
-    {% for id, name, type, monitored in sources %}
-      {% if type == 'channel' %}
-        <li><b>{{ name }}</b> (ID: {{ id }}) — {{ '🟢 слушается' if monitored else '🔴 не слушается' }}
-          <form style="display:inline;" method="post" action="/sources/{{ id }}/toggle">
-            <button type="submit">{{ 'Выключить' if monitored else 'Включить' }}</button>
+    {% for row in sources %}
+      {% if row.type == 'channel' %}
+        <li><b>{{ row.name }}</b> (ID: {{ row.channel_id }}) — {{ '🟢 слушается' if row.monitored else '🔴 не слушается' }}
+          <form style="display:inline;" method="post" action="/sources/{{ row.id }}/toggle">
+            <button type="submit">{{ 'Выключить' if row.monitored else 'Включить' }}</button>
+          </form>
+          <form style="display:inline;" method="post" action="/sources/delete/{{ row.id }}" onsubmit="return confirm('Удалить?');">
+            <button type="submit">Удалить</button>
           </form>
         </li>
       {% endif %}
     {% endfor %}
   </ul>
 
-  <h2>💬 Чаты</h2>
+  <h2>💬 Чаты с ценами</h2>
   <ul>
-    {% for id, name, type, monitored in sources %}
-      {% if type == 'chat' %}
-        <li><b>{{ name }}</b> (ID: {{ id }}) — {{ '🟢 слушается' if monitored else '🔴 не слушается' }}
-          <form style="display:inline;" method="post" action="/sources/{{ id }}/toggle">
-            <button type="submit">{{ 'Выключить' if monitored else 'Включить' }}</button>
-          </form>
+    {% for row in sources %}
+      {% if row.type == 'chat_prices' %}
+        <li><b>{{ row.name }}</b> (ID: {{ row.channel_id }}) — {{ '🟢 слушается' if row.monitored else '🔴 не слушается' }}
+          ...
         </li>
       {% endif %}
     {% endfor %}
   </ul>
 
+  <h2>📨 Чаты с сообщениями</h2>
+  <ul>
+    {% for row in sources %}
+      {% if row.type == 'chat_messages' %}
+        <li><b>{{ row.name }}</b> (ID: {{ row.channel_id }}) — {{ '🟢 слушается' if row.monitored else '🔴 не слушается' }}
+          ...
+        </li>
+      {% endif %}
+    {% endfor %}
+  </ul>
   <hr>
 
   <table id="sourceTable">
@@ -67,18 +131,17 @@
       <tr><th>ID</th><th>Имя</th><th>Тип</th><th>Слушать</th><th>Действия</th></tr>
     </thead>
     <tbody>
-      {% for id, name, type, monitored in sources %}
+      {% for row in sources %}
         <tr>
-          <td>{{ id }}</td>
-          <td>{{ name }}</td>
-          <td>{{ type }}</td>
-          <td>{{ '✅' if monitored else '❌' }}</td>
+          <td>{{ row.channel_id }}</td>
+          <td>{{ row.name }}</td>
+          <td>{{ row.type }}</td>
+          <td>{{ '✅' if row.monitored else '❌' }}</td>
           <td>
-            <form style="display:inline;" method="post" action="/sources/{{ id }}/toggle">
-              <button type="submit">{{ 'Выключить' if monitored else 'Включить' }}</button>
+            <form style="display:inline;" method="post" action="/sources/{{ row.id }}/toggle">
+              <button type="submit">{{ 'Выключить' if row.monitored else 'Включить' }}</button>
             </form>
-            <form style="display:inline;" action="/sources/{{ id }}" method="post" onsubmit="return confirm('Удалить?');">
-              <input type="hidden" name="_method" value="delete">
+            <form style="display:inline;" method="post" action="/sources/delete/{{ row.id }}" onsubmit="return confirm('Удалить?');">
               <button type="submit">Удалить</button>
             </form>
           </td>

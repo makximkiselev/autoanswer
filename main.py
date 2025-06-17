@@ -3,72 +3,93 @@ import asyncio
 import logging
 import uvicorn
 from dotenv import load_dotenv
-from telethon import TelegramClient
-from aiogram import Bot, Dispatcher
-from aiogram.fsm.storage.memory import MemoryStorage
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
+from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
+
+from web.catalog_admin import router as catalog_admin_router
+from web.source_api import router as source_router
+from web.monitoring_api import router as monitoring_router
+from web.unknowns_api import router as unknowns_router
+from web.bindings import router as bindings_router
+from web.matrix_api import router as matrix_router
+from web.parsing_admin import router as parsing_admin_router
+from web.catalog_public import router as catalog_public_router
+
+from database import init_db, get_session
+from config import API_TOKEN, client_configs
+from utils import get_all_clients
 from telethon_client import start_telethon_monitoring
 from aiogram_bot import setup_aiogram_bot
-from web.source_api import router as source_router
-from parser import parse_all_channels  # ← Функция сбора прайсов
+from scheduler import start_scheduler
+from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
 
 load_dotenv()
+logging.getLogger("telethon").setLevel(logging.WARNING)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-API_TOKEN = os.getenv("API_TOKEN")
+templates = Jinja2Templates(directory="web/templates")
 
-client_configs = [
-    {
-        "session": os.getenv("SESSION_NAME_1"),
-        "api_id": int(os.getenv("API_ID_1")),
-        "api_hash": os.getenv("API_HASH_1"),
-        "label": "account_1"
-    },
-    {
-        "session": os.getenv("SESSION_NAME_2"),
-        "api_id": int(os.getenv("API_ID_2")),
-        "api_hash": os.getenv("API_HASH_2"),
-        "label": "account_2"
-    }
-]
-
-clients = []
-scheduler = AsyncIOScheduler()
+monitoring_stats = {}  # Глобальный словарь для сбора статистики
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    SESSIONS_DIR = "sessions"
-    for cfg in client_configs:
-        session_path = os.path.join(SESSIONS_DIR, f"{cfg['session']}.session")
-        client = TelegramClient(session_path, cfg["api_id"], cfg["api_hash"])
-        await client.start()
-        clients.append((client, cfg["label"]))
-        logger.info(f"Клиент {cfg['label']} авторизован")
+    init_db()
 
-    # 🔁 Запуск фонового мониторинга сообщений
-    asyncio.create_task(monitor_all_channels(clients))
+    with get_session() as session:
+        session.execute(text("TRUNCATE TABLE processed_channels"))
+        session.commit()
+        logger.info("♻️ Таблица processed_channels очищена при старте FastAPI")
 
-    # ⏰ Планировщик запуска parse_all_channels раз в час
-    scheduler.add_job(lambda: asyncio.create_task(parse_all_channels()), 'interval', minutes=60)
-    scheduler.start()
+        session.execute(text("""
+            ALTER TABLE IF EXISTS products
+            ADD COLUMN IF NOT EXISTS approved BOOLEAN DEFAULT FALSE
+        """))
 
-    # 🤖 Aiogram-бот
-    bot = Bot(token=API_TOKEN)
-    dp = Dispatcher(storage=MemoryStorage())
-    setup_aiogram_bot(dp)
-    asyncio.create_task(dp.start_polling(bot))
+        session.execute(text("""
+            CREATE TABLE IF NOT EXISTS categories (
+                id SERIAL PRIMARY KEY,
+                name TEXT UNIQUE NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS brands (
+                id SERIAL PRIMARY KEY,
+                name TEXT NOT NULL,
+                category_id INTEGER REFERENCES categories(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS models (
+                id SERIAL PRIMARY KEY,
+                name TEXT NOT NULL,
+                brand_id INTEGER REFERENCES brands(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS catalog_products (
+                id SERIAL PRIMARY KEY,
+                name TEXT NOT NULL,
+                model_id INTEGER REFERENCES models(id),
+                article TEXT
+            );
+        """))
+
+        session.commit()
+
+    start_scheduler()
+    asyncio.create_task(setup_aiogram_bot())
+
+    clients = await get_all_clients(client_configs)
+    for client, label in clients:
+        monitoring_stats[label] = {"channels": 0, "messages": 0, "products": 0}  # Инициализация
+        asyncio.create_task(start_telethon_monitoring(client, label, monitoring_stats))
 
     yield
 
 app = FastAPI(lifespan=lifespan)
-templates = Jinja2Templates(directory="web/templates")
-app.include_router(source_router, prefix="/sources")
 
 app.add_middleware(
     CORSMiddleware,
@@ -78,29 +99,62 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Роутеры
+app.include_router(catalog_admin_router)
+app.include_router(monitoring_router)
+app.include_router(source_router, prefix="/sources")
+app.include_router(unknowns_router, prefix="/unknowns")
+app.include_router(catalog_admin_router, prefix="/catalog")
+app.include_router(bindings_router, prefix="/bindings")
+app.include_router(matrix_router)
+app.include_router(parsing_admin_router)
+app.include_router(catalog_public_router)
+
+app.mount("/static", StaticFiles(directory="web/static"), name="static")
+
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
-
-# 📥 Запуск парсинга по кнопке
-@app.get("/run-parser", response_class=HTMLResponse)
-async def run_parser(request: Request):
-    asyncio.create_task(parse_all_channels())
-    return templates.TemplateResponse("index.html", {"request": request, "message": "🔁 Парсинг запущен"})
 
 @app.get("/matrix", response_class=HTMLResponse)
 async def matrix(request: Request):
     tree = {}
     return templates.TemplateResponse("matrix.html", {"request": request, "tree": tree})
 
-# 📡 Фоновый мониторинг чатов
-async def monitor_all_channels(clients):
-    for client, label in clients:
-        try:
-            await start_telethon_monitoring(client, label)
-        except Exception as e:
-            logger.exception(f"Ошибка при мониторинге ({label}): {e}")
+@app.get("/monitoring/stats", response_class=HTMLResponse)
+async def monitoring_stats_view(request: Request):
+    return templates.TemplateResponse("monitoring_stats.html", {
+        "request": request,
+        "stats": monitoring_stats
+    })
+
+@app.get("/unknowns", response_class=HTMLResponse)
+async def view_unknowns(request: Request):
+    with get_session() as session:
+        unknowns = session.execute(text("""
+            SELECT * FROM unmatched_models ORDER BY first_seen DESC
+        """)).fetchall()
+
+        products = session.execute(text("""
+            SELECT id, name FROM catalog_products ORDER BY name
+        """)).fetchall()
+        model_map = {row[0]: row[1] for row in products}
+
+        categories = session.execute(text("SELECT id, name FROM categories ORDER BY name")).fetchall()
+        brands = session.execute(text("SELECT DISTINCT name FROM brands ORDER BY name")).fetchall()
+        models = session.execute(text("SELECT DISTINCT name FROM models ORDER BY name")).fetchall()
+
+    return templates.TemplateResponse("unknowns.html", {
+        "request": request,
+        "unknowns": unknowns,
+        "model_map": model_map,
+        "categories": categories,
+        "brands": brands,
+        "models": models
+    })
 
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    print("\U0001F4CB Список маршрутов:")
+    for route in app.router.routes:
+        print(f"➡️ {getattr(route, 'path', '')}")
+    uvicorn.run(app, host="127.0.0.1", port=8000)

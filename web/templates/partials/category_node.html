@@ -1,0 +1,107 @@
+<li class="node" data-id="{{ cat.id }}">
+  <div class="title">
+    {{ cat.name }}
+    <div class="actions">
+      <button onclick="toggleForm(this, 'cat', {{ cat.id }})">➕</button>
+      <form method="post" action="/catalog/edit/rename-category">
+        <input type="hidden" name="category_id" value="{{ cat.id }}">
+        <input type="text" name="new_name" placeholder="Переименовать">
+        <button type="submit">✏️</button>
+      </form>
+      <form method="post" action="/catalog/edit/delete-category">
+        <input type="hidden" name="category_id" value="{{ cat.id }}">
+        <button class="delete" type="submit">🗑️</button>
+      </form>
+    </div>
+  </div>
+
+  {% if cat.children %}
+    <!-- Только если есть подкатегории -->
+    <ul class="tree nested-sortable">
+      {% for child in cat.children %}
+        {% include "partials/category_node.html" with context %}
+      {% endfor %}
+    </ul>
+  {% endif %}
+
+  <form class="form-inline hidden" data-form="cat-{{ cat.id }}" method="post" action="/catalog/edit/add-category">
+    <input type="hidden" name="parent_id" value="{{ cat.id }}">
+    <input type="text" name="name" placeholder="Новая подкатегория" required>
+    <button type="submit">Добавить</button>
+  </form>
+
+  <!-- Бренды (всегда, даже если есть подкатегории) -->
+  {% for brand in cat.brands %}
+    <div class="nested">
+      🏷️ {{ brand.name }}
+      <div class="actions">
+        <button onclick="toggleForm(this, 'brand', {{ brand.id }})">➕</button>
+        <form method="post" action="/catalog/edit/rename-brand">
+          <input type="hidden" name="brand_id" value="{{ brand.id }}">
+          <input type="text" name="new_name" placeholder="Новое имя">
+          <button type="submit">✏️</button>
+        </form>
+        <form method="post" action="/catalog/edit/delete-brand">
+          <input type="hidden" name="brand_id" value="{{ brand.id }}">
+          <button class="delete" type="submit">🗑️</button>
+        </form>
+      </div>
+
+      {% for model in brand.models %}
+        <div class="nested" style="margin-left: 30px;">
+          📦 {{ model.name }}
+          <div class="actions">
+            <button onclick="toggleForm(this, 'model', {{ model.id }})">➕</button>
+            <form method="post" action="/catalog/edit/rename-model">
+              <input type="hidden" name="model_id" value="{{ model.id }}">
+              <input type="text" name="new_name" placeholder="Новое имя">
+              <button type="submit">✏️</button>
+            </form>
+            <form method="post" action="/catalog/edit/delete-model">
+              <input type="hidden" name="model_id" value="{{ model.id }}">
+              <button class="delete" type="submit">🗑️</button>
+            </form>
+          </div>
+
+          {% for product in model.products %}
+            <div class="nested" style="margin-left: 30px; background: #fefefe;">
+              🧾 {{ product.name }}
+              {% if product.article %}
+                <br><span class="dim">Артикул: {{ product.article }}</span>
+              {% endif %}
+              <div class="actions">
+                <form method="post" action="/catalog/edit/rename-product">
+                  <input type="hidden" name="product_id" value="{{ product.id }}">
+                  <input type="text" name="new_name" placeholder="Новое имя">
+                  <button type="submit">✏️</button>
+                </form>
+                <form method="post" action="/catalog/edit/delete-product">
+                  <input type="hidden" name="product_id" value="{{ product.id }}">
+                  <button class="delete" type="submit">🗑️</button>
+                </form>
+              </div>
+            </div>
+          {% endfor %}
+
+          <form class="form-inline hidden" data-form="model-{{ model.id }}" method="post" action="/catalog/edit/add-product" style="margin-left: 30px;">
+            <input type="hidden" name="model_id" value="{{ model.id }}">
+            <input type="text" name="name" placeholder="Товар" required>
+            <button type="submit">Добавить</button>
+          </form>
+        </div>
+      {% endfor %}
+
+      <form class="form-inline hidden" data-form="brand-{{ brand.id }}" method="post" action="/catalog/edit/add-model" style="margin-left: 30px;">
+        <input type="hidden" name="brand_id" value="{{ brand.id }}">
+        <input type="text" name="name" placeholder="Модель" required>
+        <button type="submit">Добавить</button>
+      </form>
+    </div>
+  {% endfor %}
+
+  <form class="form-inline hidden" data-form="cat-brand-{{ cat.id }}" method="post" action="/catalog/edit/add-brand">
+    <input type="hidden" name="category_id" value="{{ cat.id }}">
+    <input type="text" name="name" placeholder="Бренд" required>
+    <button type="submit">Добавить</button>
+  </form>
+</li>

@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Статистика мониторинга</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 p-6">
+    <div class="max-w-6xl mx-auto">
+        <h1 class="text-3xl font-bold mb-6">📊 Статистика мониторинга</h1>
+
+        {% for label, account in stats.items() %}
+            <div class="mb-8 bg-white rounded-lg shadow p-6">
+                <h2 class="text-xl font-semibold text-blue-600 mb-4">Аккаунт: {{ label }}</h2>
+                <p class="text-gray-700 mb-4">
+                    Обработано каналов и чатов: {{ account.channels }}<br>
+                    Всего сообщений: {{ account.messages }}<br>
+                    Всего товаров обновлено: {{ account.products }}
+                </p>
+
+                <div class="overflow-x-auto">
+    <table class="min-w-full text-sm text-left">
+        <thead>
+            <tr class="bg-gray-200 text-gray-800">
+                <th class="py-2 px-4">Канал</th>
+                <th class="py-2 px-4">Сообщений</th>
+                <th class="py-2 px-4">Обновлено товаров</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for detail in account.details %}
+            <tr class="border-b border-gray-200">
+                <td class="py-2 px-4">{{ detail.channel_name }}</td>
+                <td class="py-2 px-4">{{ detail.messages }}</td>
+                <td class="py-2 px-4">{{ detail.products }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+            </div>
+        {% endfor %}
+
+        <div class="mt-6 space-x-4">
+            <a href="/" class="text-blue-500 hover:underline">🏠 Главная</a>
+            <a href="/unknowns" class="text-blue-500 hover:underline">🧩 Неопознанные модели</a>
+            <a href="/matrix" class="text-blue-500 hover:underline">🧮 Прайс-матрица</a>
+        </div>
+    </div>
+</body>
+</html>

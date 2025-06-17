@@ -1,0 +1,43 @@
+{% for u in unknowns %}
+<tr>
+    <td class="product-name">
+        <strong>Наименование: {{ u.raw_name }}</strong><br>
+        <small>ID: {{ u.id }}</small>
+        <input type="hidden" name="region_code_{{ u.id }}" value="{{ u.detected_region or '' }}">
+    </td>
+    <td>
+        <input list="model-list-{{ u.id }}" class="search-select" oninput="searchModel(this, 'model-list-{{ u.id }}')">
+        <datalist id="model-list-{{ u.id }}"></datalist>
+    </td>
+    <td>
+        <select name="model_select_{{ u.id }}" required>
+            <option value="">Выберите модель...</option>
+            {% for mid, name in model_map.items() %}
+            <option value="{{ mid }}">{{ name }}</option>
+            {% endfor %}
+        </select>
+        <br>
+        <button type="button" class="confirm-btn" onclick="confirmProduct(this)" disabled>Подтвердить</button>
+    </td>
+    <td>
+        {% if u.region_flag %}
+            <div style="font-size: 20px;">{{ u.region_flag }}</div>
+        {% endif %}
+        <select name="region_code_{{ u.id }}">
+            <option value="">-</option>
+            {% for region in regions %}
+            <option value="{{ region.code }}">{{ region.flag or '' }} {{ region.code|upper }}</option>
+            {% endfor %}
+        </select>
+    </td>
+    <td>
+        <button type="button" class="add-product-btn" onclick="openModal('{{ u.id }}')">Добавить товар</button>
+    </td>
+    <td>
+        <form method="post" action="/unknowns/exclude">
+            <input type="hidden" name="unmatched_id" value="{{ u.id }}">
+            <button type="submit" class="bg-yellow-500 text-white px-3 py-1 rounded hover:bg-yellow-600">🚫 Исключить</button>
+        </form>
+    </td>
+</tr>
+{% endfor %}

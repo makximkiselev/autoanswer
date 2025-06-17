@@ -1,0 +1,53 @@
+<h3>📦 Список товаров</h3>
+
+{% if products %}
+<table class="product-table">
+    <thead>
+        <tr>
+            <th>Название</th>
+            <th>Артикул</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for product in products %}
+        <tr>
+            <td>{{ product.name }}</td>
+            <td>{{ product.article or "—" }}</td>
+            <td><a href="/catalog/product/{{ product.id }}" class="more-link">Подробнее →</a></td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>Нет товаров для отображения.</p>
+{% endif %}
+
+<style>
+    .product-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 1em;
+    }
+
+    .product-table th, .product-table td {
+        padding: 10px 14px;
+        border: 1px solid #ddd;
+        text-align: left;
+    }
+
+    .product-table th {
+        background-color: #f5f5f5;
+        font-weight: bold;
+    }
+
+    .more-link {
+        color: #0066cc;
+        text-decoration: none;
+        font-size: 0.9em;
+    }
+
+    .more-link:hover {
+        text-decoration: underline;
+    }
+</style>

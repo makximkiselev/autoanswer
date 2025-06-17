@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Редактирование каталога</title>
+  <style>
+    body { font-family: system-ui, sans-serif; padding: 40px; background: #f9f9f9; }
+    h1 { font-size: 1.6em; }
+    .tabs { display: flex; gap: 10px; margin-bottom: 20px; }
+    .tabs button { padding: 8px 16px; background: #ddd; border: none; cursor: pointer; border-radius: 4px; }
+    .tabs button.active { background: #333; color: #fff; }
+    .view-container { display: none; }
+    .view-container.active { display: block; }
+    .section { display: flex; gap: 20px; }
+    .column { background: #fff; border: 1px solid #ccc; border-radius: 6px; padding: 12px; width: 30%; min-height: 200px; }
+    .column h3 { margin-top: 0; font-size: 1.1em; }
+    .item { padding: 6px 10px; margin-bottom: 5px; background: #f0f0f0; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; cursor: grab; }
+    .item-name { flex: 1; cursor: pointer; }
+    .item.active .item-name { color: #007bff; font-weight: bold; }
+    .inline-form { margin-top: 10px; display: flex; gap: 5px; }
+    .inline-form input, .inline-form select { flex: 1; padding: 4px 8px; }
+    .inline-form button { padding: 4px 10px; background: #333; color: #fff; border: none; cursor: pointer; }
+    .icon-button { background: transparent; border: none; cursor: pointer; font-size: 1em; margin-left: 4px; }
+    #toast {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #333;
+      color: white;
+      padding: 10px 20px;
+      border-radius: 6px;
+      opacity: 0;
+      transition: opacity 0.4s ease;
+      z-index: 1000;
+    }
+    #toast.show { opacity: 1; }
+    .drag-over {
+      outline: 2px dashed #007bff;
+      background-color: #e6f2ff;
+    }
+  </style>
+</head>
+<body>
+<h1>📂 Редактирование каталога</h1>
+
+<script id="catalog-data" type="application/json">
+{
+  "categories": {{ categories|tojson }},
+  "brands": {{ brands|tojson }},
+  "models": {{ models|tojson }}
+}
+</script>
+<script>
+  const data = JSON.parse(document.getElementById('catalog-data').textContent);
+  window.categories = data.categories;
+  window.brands = data.brands;
+  window.models = data.models;
+</script>
+
+<div id="toast"></div>
+
+<div class="tabs">
+  <button class="tab-button active" data-tab="categories">Категории</button>
+  <button class="tab-button" data-tab="brands">Бренды</button>
+  <button class="tab-button" data-tab="models">Модели</button>
+</div>
+
+<div class="view-container active" id="tab-categories">
+  <div class="section">
+  <div class="column" id="category-list">
+    <h3>Категории <button onclick="addCategory()">➕</button></h3>
+    <div id="categories"></div>
+  </div>
+  <div class="column" id="subcategory-list">
+    <h3>Подкатегории <button onclick="addSubcategory()">➕</button></h3>
+    <div id="subcategories"></div>
+  </div>
+  <div class="column" id="brand-list">
+    <h3>Бренды <button id="add-brand-button" disabled onclick="addBrandToCategory()">➕</button></h3>
+    <div id="brands"></div>
+  </div>
+  <div class="column" id="model-list-inline">
+    <h3>Модели <button id="add-model-button" disabled onclick="addModelToSelectedBrand()">➕</button></h3>
+    <div id="inline-models"></div>
+  </div>
+    </div>
+  </div>
+</div>
+
+<!-- ДОБАВЛЕНО: блок моделей -->
+<div class="view-container" id="tab-brands">
+  <div class="section">
+    <div class="column" id="brand-directory">
+      <h3>Справочник брендов <button onclick="addGlobalBrand()">➕</button></h3>
+      <div id="brand-global-list"></div>
+    </div>
+  </div>
+</div>
+
+<div class="view-container" id="tab-models">
+  <div class="section">
+    <div class="column" id="model-list">
+      <h3>Модели <button onclick="addModelToBrand()">➕</button></h3>
+      <div id="models"></div>
+    </div>
+  </div>
+</div>
+
+<!-- 👇 JS для логики -->
+<script src="/static/js/catalog-edit.js"></script>
+
+<!-- 👇 Переключение вкладок -->
+<script>
+  document.querySelectorAll('.tab-button').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      switchTab(btn.dataset.tab);
+    });
+  });
+
+  function addModelToBrand() {
+    const container = document.getElementById('models');
+    const form = document.createElement('div');
+    form.className = 'inline-form';
+    form.innerHTML = '<input type="text" placeholder="Новая модель">' +
+      '<select id="brand-select">' +
+      (window.brands || []).map(function(b) {
+        return '<option value="' + b.id + '">' + b.name + '</option>';
+      }).join('') +
+      '</select>' +
+      '<button>📋</button>';
+
+    form.querySelector('button').onclick = function() {
+      const name = form.querySelector('input').value.trim();
+      const brand_id = form.querySelector('select').value;
+      if (!name || !brand_id) return;
+      fetch('/catalog/edit/add-model', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ name: name, brand_id: brand_id })
+      }).then(function() {
+        showToast('Модель добавлена');
+        renderModels();
+      });
+    };
+    container.prepend(form);
+  }
+
+  function renderModels() {
+    const container = document.getElementById('models');
+    container.innerHTML = '';
+    (window.models || []).forEach(function(m) {
+      const el = document.createElement('div');
+      el.className = 'item';
+      el.innerHTML = '<span class="item-name">' + m.name + '</span>';
+      container.appendChild(el);
+    });
+  }
+  document.addEventListener('DOMContentLoaded', function () {
+    const addBrandBtn = document.getElementById('add-brand-button');
+    const addModelBtn = document.getElementById('add-model-button');
+
+    window.enableBrandAndModelInputs = function () {
+      const hasSub = window.categories.some(c => c.parent_id === activeCategoryId);
+      addBrandBtn.disabled = !activeSubcategoryId && hasSub;
+      addModelBtn.disabled = !activeSubcategoryId || !activeBrandId;
+    };
+
+    window.selectCategory = (id, el) => {
+      activeCategoryId = id;
+      activeSubcategoryId = null;
+      activeBrandId = null;
+      document.querySelectorAll('#categories .item').forEach(i => i.classList.remove('active'));
+      if (el && el.closest('.item')) el.closest('.item').classList.add('active');
+
+      const tree = buildCategoryTree(window.categories, id, 1);
+      renderTree(document.getElementById('subcategories'), tree, selectSubcategory);
+
+      fetch(`/catalog/brands/${id}`).then(r => r.json()).then(data => {
+        renderList('brands', data.brands, selectBrand);
+      });
+      enableBrandAndModelInputs();
+    };
+
+    window.selectSubcategory = (id, el) => {
+      activeSubcategoryId = id;
+      activeBrandId = null;
+      document.querySelectorAll('#subcategories .item').forEach(i => i.classList.remove('active'));
+      if (el && el.closest('.item')) el.closest('.item').classList.add('active');
+
+      fetch(`/catalog/brands/${id}`).then(r => r.json()).then(data => {
+        renderList('brands', data.brands, selectBrand);
+      });
+      enableBrandAndModelInputs();
+    };
+
+    window.selectBrand = (id, el) => {
+      activeBrandId = id;
+      document.querySelectorAll('#brands .item').forEach(i => i.classList.remove('active'));
+      if (el && el.closest('.item')) el.closest('.item').classList.add('active');
+      enableBrandAndModelInputs();
+    };
+
+    window.addModelToSelectedBrand = () => {
+      if (!activeBrandId) return;
+      const container = document.getElementById('inline-models');
+      const form = document.createElement('div');
+      form.className = 'inline-form';
+      form.innerHTML = '<input type="text" placeholder="Новая модель"><button>📋</button>';
+      form.querySelector('button').onclick = () => {
+        const name = form.querySelector('input').value.trim();
+        if (!name) return;
+        fetch('/catalog/edit/add-model', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ name, brand_id: activeBrandId })
+        }).then(() => {
+          showToast('Модель добавлена');
+          renderModels();
+        });
+      };
+      container.prepend(form);
+    };
+  });
+  function addGlobalBrand() {
+    const container = document.getElementById('brand-global-list');
+    const form = document.createElement('div');
+    form.className = 'inline-form';
+    form.innerHTML = '<input type="text" placeholder="Новый бренд"><button>📋</button>';
+    form.querySelector('button').onclick = () => {
+      const name = form.querySelector('input').value.trim().toLowerCase();
+      if (!name) return;
+      const exists = (window.brands || []).some(b => b.name.toLowerCase() === name);
+      if (exists) {
+        showToast('Такой бренд уже существует');
+        return;
+      }
+      fetch('/catalog/edit/add-brand', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ name: name })
+      })
+      .then(res => res.json())
+      .then(newBrand => {
+        showToast('Бренд добавлен');
+        if (!window.brands) window.brands = [];
+        window.brands.push(newBrand);
+        renderGlobalBrands();
+      });
+    };
+    container.prepend(form);
+  }
+
+  function renderGlobalBrands() {
+    const container = document.getElementById('brand-global-list');
+    container.innerHTML = '';
+    (window.brands || []).forEach(b => {
+      const el = document.createElement('div');
+      el.className = 'item';
+      el.innerHTML = '<span class="item-name">' + b.name + '</span>';
+      container.appendChild(el);
+    });
+  }
+
+  function switchTab(tab) {
+    document.querySelectorAll('.tab-button').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.tab === tab);
+    });
+    document.querySelectorAll('.view-container').forEach(c => {
+      c.classList.toggle('active', c.id === 'tab-' + tab);
+    });
+    if (tab === 'brands') renderGlobalBrands();
+    if (tab === 'models') renderModels();
+  }
+</script>
+</body>
+</html>

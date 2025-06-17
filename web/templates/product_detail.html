@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>{{ product.name }}</title>
+    <style>
+        body {
+            font-family: system-ui, sans-serif;
+            max-width: 900px;
+            margin: auto;
+            padding: 40px;
+            background: #f9f9f9;
+            color: #222;
+        }
+        h1 { font-size: 1.6em; margin-bottom: 0.3em; }
+        .meta { color: #777; font-size: 0.95em; }
+
+        .section {
+            margin-top: 2em;
+            background: white;
+            padding: 20px;
+            border: 1px solid #ddd;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+
+        th, td {
+            padding: 8px 12px;
+            border: 1px solid #eee;
+            text-align: left;
+        }
+
+        th { background-color: #f5f5f5; }
+
+        .image-block img {
+            max-width: 100%;
+            height: auto;
+            border: 1px solid #ccc;
+            margin-bottom: 10px;
+        }
+
+        .links a {
+            display: block;
+            margin-bottom: 6px;
+            color: #0066cc;
+            text-decoration: none;
+        }
+
+        .links a:hover {
+            text-decoration: underline;
+        }
+
+        .filters button {
+            margin-right: 10px;
+            padding: 6px 12px;
+            background: #eee;
+            border: none;
+            cursor: pointer;
+        }
+
+        .filters button.active {
+            background: #333;
+            color: white;
+        }
+
+        .price-chart-wrapper {
+            max-width: 100%;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+
+<h1>{{ product.name }}</h1>
+<div class="meta">
+    Категория: {{ product.category }} • Бренд: {{ product.brand }} • Модель: {{ product.model }}<br>
+    Артикул: <strong>{{ product.article or "—" }}</strong>
+</div>
+
+<div class="section">
+    <h2>💰 История цен</h2>
+
+    <div class="filters">
+        <button onclick="updateChart(7)" class="active">7 дней</button>
+        <button onclick="updateChart(14)">14 дней</button>
+        <button onclick="updateChart(30)">30 дней</button>
+    </div>
+
+    <div class="price-chart-wrapper">
+        <canvas id="priceChart" height="100"></canvas>
+    </div>
+</div>
+
+<div class="section">
+    <h2>🖼 Изображения</h2>
+    <div class="image-block">
+        {% if product.images %}
+            {% for img_url in product.images %}
+                <img src="{{ img_url }}" alt="Фото товара">
+            {% endfor %}
+        {% else %}
+            <p>Изображения отсутствуют.</p>
+        {% endif %}
+    </div>
+</div>
+
+<div class="section">
+    <h2>🔗 Ссылки на сайты конкурентов</h2>
+    <div class="links">
+        {% if product.links %}
+            {% for link in product.links %}
+                <a href="{{ link }}" target="_blank">{{ link }}</a>
+            {% endfor %}
+        {% else %}
+            <p>Ссылки пока не добавлены.</p>
+        {% endif %}
+    </div>
+</div>
+
+<div class="section">
+    <h2>📦 Характеристики</h2>
+    {% if product.features %}
+        <table>
+            {% for feature in product.features %}
+                <tr>
+                    <th>{{ feature.name }}</th>
+                    <td>{{ feature.value }}</td>
+                </tr>
+            {% endfor %}
+        </table>
+    {% else %}
+        <p>Характеристики отсутствуют.</p>
+    {% endif %}
+</div>
+
+<form method="post" action="/catalog/product/{{ product.id }}/refresh" style="margin-top: 1em;">
+    <button type="submit">🔄 Обновить данные</button>
+</form>
+
+<nav style="margin-top: 2em;">
+    <a href="/catalog">← Назад в каталог</a> |
+    <a href="/catalog/product/{{ product.id }}/edit">✏️ Редактировать</a>
+</nav>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    const chartLabels = {{ prices | map(attribute="updated_at") | map("strftime", "%Y-%m-%d") | list | tojson | safe }};
+    const chartPrices = {{ prices | map(attribute="price") | list | tojson | safe }};
+</script>
+<script src="/static/js/chart-prices.js"></script>
+<script>
+    const chart = initChart(chartLabels.slice(-7), chartPrices.slice(-7));
+</script>
+
+</body>
+</html>

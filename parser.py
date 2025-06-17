@@ -1,188 +1,362 @@
 import re
 import spacy
-from database import get_connection
+import logging
+import asyncio
+import emoji
+import unicodedata
+from datetime import datetime
+from sqlalchemy.sql import text
+from telethon.errors import ChannelPrivateError, FloodWaitError
+
+from database import get_connection, get_allowed_sources, save_unmatched_model, add_processed_channel, was_channel_processed, get_region_map
 from normalizer import normalize_model_name
+from utils import get_all_clients, ensure_messages_table, log_monitoring_result
+from config import client_configs
+from telethon_client import get_all_clients as get_cached_clients
 
 nlp = spacy.load('ru_core_news_sm')
+logger = logging.getLogger(__name__)
 
-def parse_message_text(text: str, source: dict):
-    from utils import ensure_messages_table
+monitoring_stats = {}
+region_map = get_region_map()
 
+def fetch_exclusion_phrases():
+    session = get_connection()
+    try:
+        rows = session.execute(text("SELECT phrase FROM exclusion_phrases")).fetchall()
+        return [row[0].lower() for row in rows]
+    finally:
+        session.close()
+
+def extract_product_parts(model_text: str):
+    def extract_flag_emoji(text):
+        flags = re.findall(r'[\U0001F1E6-\U0001F1FF]{2}', text)
+        return flags[0] if flags else None
+
+    def remove_non_flag_emojis(text):
+        return ''.join(
+            ch for ch in text if not (
+                ch in emoji.EMOJI_DATA and not re.match(r'[\U0001F1E6-\U0001F1FF]', ch)
+            )
+        )
+
+    raw_text = remove_non_flag_emojis(model_text)
+    region_flag = extract_flag_emoji(model_text)
+    region = region_flag if region_flag else None
+
+    text = re.sub(r'[\U0001F1E6-\U0001F1FF]{2}', '', raw_text)
+    text = re.sub(r'[^\w\s\-+]', '', text).strip()
+
+    parts = text.lower().split()
+
+    known_lineups = {
+        "iphone": "Apple",
+        "ipad": "Apple",
+        "macbook": "Apple",
+        "airpods": "Apple",
+        "watch": "Apple",
+        "imac": "Apple",
+        "pixel": "Google",
+        "galaxy": "Samsung",
+        "note": "Xiaomi",
+        "redmi": "Redmi",
+        "mi": "Xiaomi",
+        "poco": "Poco",
+        "realme": "Realme",
+        "oneplus": "OnePlus",
+        "nokia": "Nokia",
+    }
+
+    brand = None
+    lineup = None
+    model = None
+
+    for part in parts:
+        if part in known_lineups:
+            lineup = part
+            brand = known_lineups[part]
+            break
+
+    if not brand:
+        brand = "Unknown"
+
+    model_tokens = []
+    for word in parts:
+        if re.match(r'\d{2,4}', word):
+            break
+        if word.lower() in ['teal', 'blue', 'black', 'white', 'natural', 'gray', 'gold', 'pink', 'red']:
+            break
+        model_tokens.append(word)
+
+    model = ' '.join(model_tokens).title()
+
+    region_map = {
+        '🇺🇸': 'us', '🇷🇺': 'ru', '🇪🇺': 'eu', '🇭🇰': 'hk',
+        '🇨🇳': 'cn', '🇰🇿': 'kz', '🇮🇳': 'in', '🇹🇭': 'th',
+        '🇦🇪': 'ae', '🇲🇾': 'my', '🇯🇵': 'jp', '🇰🇷': 'kr'
+    }
+    region = region_map.get(region_flag, None)
+
+    return brand, lineup, model, region
+
+def extract_products_with_flags_and_price(line):
+    results = []
+    price_match = re.search(r"(\d{5,7})(?!\d)", line)
+    if not price_match:
+        return []
+
+    price = int(price_match.group(1))
+    price_start = price_match.start()
+    text = line[:price_start].strip()
+
+    flags = re.findall(r"[\U0001F1E6-\U0001F1FF]{2}", text)
+    name = re.sub(r"[\U0001F1E6-\U0001F1FF]{2}", "", text)
+    name = re.sub(r"[/\\]+", "", name).strip("•-:")
+
+    if not flags:
+        results.append({"name": name.strip(), "price": price, "flag": None})
+    else:
+        for flag in flags:
+            results.append({"name": name.strip(), "price": price, "flag": flag})
+
+    return results
+
+def insert_price_or_unknown(session, model_text: str, price: int, flag: str, source: dict) -> bool:
+    brand, lineup, model, region = extract_product_parts(model_text)
+    name_std = normalize_model_name(f"{brand} {lineup or ''} {model} {region or ''}")
+
+    cleaned = session.execute(
+        text("SELECT id FROM products_cleaned WHERE name_std = :name_std"),
+        {"name_std": name_std}
+    ).first()
+
+    if not cleaned:
+        # ❌ Не удалось привязать — сохраняем как неизвестную модель
+        save_unmatched_model(
+            raw_name=model_text,
+            source_channel=source.get("channel_name"),
+            price=price,
+            brand=brand,
+            model=model,
+            region=region,
+            is_auto=False
+        )
+        return False
+
+    standard_id = cleaned[0]
+
+    # Проверка — есть ли product с таким name и standard_id
+    product = session.execute(
+        text("SELECT id FROM products WHERE standard_id = :standard_id AND name = :name"),
+        {"standard_id": standard_id, "name": model_text}
+    ).first()
+
+    if product:
+        product_id = product[0]
+    else:
+        product_id = session.execute(
+            text("""
+                INSERT INTO products (name, standard_id, approved)
+                VALUES (:name, :standard_id, TRUE)
+                RETURNING id
+            """),
+            {"name": model_text, "standard_id": standard_id}
+        ).scalar()
+
+    # Проверка — есть ли уже такая цена по message_id
+    existing_price = session.execute(
+        text("""
+            SELECT 1 FROM prices
+            WHERE product_id = :product_id AND message_id = :message_id
+        """),
+        {
+            "product_id": product_id,
+            "message_id": source.get("message_id")
+        }
+    ).first()
+
+    if existing_price:
+        return False  # ❌ Такая цена уже была, повторно не добавляем
+
+    # ✅ Добавляем новую цену
+    session.execute(
+        text("""
+            INSERT INTO prices (product_id, price, country, source_account, channel_name, message_id, message_date)
+            VALUES (:product_id, :price, :country, :source_account, :channel_name, :message_id, :message_date)
+        """),
+        {
+            "product_id": product_id,
+            "price": price,
+            "country": flag,
+            "source_account": source.get("account_id"),
+            "channel_name": source.get("channel_name"),
+            "message_id": source.get("message_id"),
+            "message_date": source.get("date").isoformat()
+        }
+    )
+
+    return True
+
+def parse_message_text(message_text: str, source: dict):
+    updated_products = 0
     channel_id = source.get("channel_id")
     account_id = source.get("account_id")
 
-    with get_connection() as conn:
-        with conn.cursor() as cursor:
-            # Проверка, разрешён ли канал к парсингу
-            cursor.execute("SELECT 1 FROM source_ids WHERE id = %s", (channel_id,))
-            if cursor.fetchone() is None:
-                print(f"⛔ Пропущен канал с ID {channel_id}, не входит в список разрешённых")
-                return
+    session = get_connection()
+    try:
+        # Проверка: источник разрешён?
+        result = session.execute(
+            text("SELECT 1 FROM source_ids WHERE channel_id = :channel_id AND account_id = :account_id"),
+            {"channel_id": channel_id, "account_id": account_id}
+        ).first()
+        if result is None:
+            logger.info(f"⛔ Источник {channel_id} (аккаунт {account_id}) не разрешён")
+            return 0
 
+        # Проверка: уже обрабатывался этим аккаунтом?
+        result = session.execute(
+            text("""SELECT 1 FROM processed_channels WHERE channel_id = :channel_id AND account_id = :account_id"""),
+            {"channel_id": channel_id, "account_id": account_id}
+        ).first()
+        if result:
+            logger.info(f"🔁 Источник {channel_id} уже обработан аккаунтом {account_id}")
+            return 0
 
-            # Проверка, не был ли уже обработан этот канал другим аккаунтом
-            cursor.execute(
-                "SELECT account_id FROM processed_channels WHERE channel_id = %s",
-                (channel_id,)
-            )
-            row = cursor.fetchone()
-            if row and row["account_id"] != account_id:
-                print(f"🔁 Пропущен канал {channel_id}, уже обработан аккаунтом {row['account_id']}")
-                return
+        ensure_messages_table()
+        lines = message_text.splitlines()
 
-            # Обновление или вставка текущего аккаунта
-            cursor.execute(
-                "INSERT INTO processed_channels (channel_id, account_id) VALUES (%s, %s) ON CONFLICT (channel_id) DO UPDATE SET account_id = EXCLUDED.account_id",
-                (channel_id, account_id)
-            )
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
 
-            print(f"\n🔍 Парсим сообщение из {source['channel_name']} (аккаунт: {account_id})")
-            ensure_messages_table()
-            lines = text.splitlines()
+            match = re.search(r"(?P<price>\d{5,7})(?:\s?(?P<flag>[\U0001F1E6-\U0001F1FF]{2}))?", line)
+            if not match:
+                logger.debug(f"📭 Не распознано в строке: {line}")
+                continue
 
-            for line in lines:
-                line = line.strip()
-                if not line:
-                    continue
+            price = int(match.group("price"))
+            flag = match.group("flag") if match.group("flag") else None
+            model_text = re.sub(r"\d{5,7}(\s?[\U0001F1E6-\U0001F1FF]{2})?", "", line).strip("•- ")
 
-                match = re.search(r"(?P<price>\d{5,7})(?:\s?(?P<flag>[\U0001F1E6-\U0001F1FF]{1,2}))?", line)
-                if not match:
-                    continue
+            success = insert_price_or_unknown(session, model_text, price, flag, source)
+            if success:
+                updated_products += 1
+                logger.info(f"✅ Добавлено: '{model_text}' за {price}₽ [{flag or 'без флага'}] — {source['channel_name']}")
+            else:
+                logger.info(f"❌ Пропущено: '{model_text}' — не добавлено — {source['channel_name']}")
 
-                price = int(match.group("price"))
-                flag = match.group("flag") if match.group("flag") else None
+        session.commit()
+    except Exception as e:
+        logger.warning(f"🔥 Ошибка при парсинге сообщения из {source.get('channel_name')}: {e}")
+        session.rollback()
+    finally:
+        session.close()
 
-                model_text = re.sub(r"\d{5,7}(\s?[\U0001F1E6-\U0001F1FF]{1,2})?", "", line).strip("\u2022- ")
+    return updated_products
 
-                doc = nlp(model_text)
-                brand, lineup, model, region = None, None, None, None
-
-                for ent in doc.ents:
-                    if ent.label_ == "ORG" and not brand:
-                        brand = ent.text.strip()
-                    elif ent.label_ == "PRODUCT" and not model:
-                        model = ent.text.strip()
-
-                known_lineups = ["iphone", "ipad", "macbook", "watch", "galaxy", "note", "pixel"]
-                parts = model_text.lower().split()
-
-                for part in parts:
-                    if part in known_lineups:
-                        lineup = part
-                for part in parts[::-1]:
-                    if part in ["ch", "us", "eu", "hk", "ae", "my", "jp", "kr"]:
-                        region = part
-
-                if not brand:
-                    brand = parts[0].capitalize() if parts else "Unknown"
-                if not model:
-                    model = model_text
-
-                name_std = f"{brand} {lineup or ''} {model} {region or ''}".strip().replace("  ", " ")
-
-                cursor.execute("SELECT id FROM products_cleaned WHERE name_std = %s", (name_std,))
-                cleaned = cursor.fetchone()
-
-                if cleaned:
-                    standard_id = cleaned["id"] if isinstance(cleaned, dict) and "id" in cleaned else cleaned[0]
-                else:
-                    if brand.lower() == "unknown" or len(model.split()) < 2:
-                        cursor.execute(
-                            "INSERT INTO unmatched_models (raw_name, source_channel, first_seen, sample_price) VALUES (%s, %s, %s, %s)",
-                            (model_text, source["channel_name"], source["date"].isoformat(), price)
-                        )
-                        continue
-
-                    cursor.execute(
-                        "INSERT INTO products_cleaned (brand, lineup, model, region, name_std) VALUES (%s, %s, %s, %s, %s)",
-                        (brand, lineup, model, region, name_std)
-                    )
-                    cursor.execute("SELECT currval(pg_get_serial_sequence('products_cleaned','id'))")
-                    row = cursor.fetchone()
-                    if row:
-                        standard_id = row["id"] if isinstance(row, dict) and "id" in row else row[0]
-                    else:
-                        continue
-
-                cursor.execute("SELECT id FROM products WHERE standard_id = %s AND name = %s", (standard_id, model_text))
-                product = cursor.fetchone()
-
-                if not product:
-                    cursor.execute("INSERT INTO products (name, standard_id) VALUES (%s, %s)", (model_text, standard_id))
-                    cursor.execute("SELECT currval(pg_get_serial_sequence('products','id'))")
-                    product_id_row = cursor.fetchone()
-                    if not product_id_row:
-                        continue
-                    product_id = product_id_row["id"] if isinstance(product_id_row, dict) and "id" in product_id_row else product_id_row[0]
-                else:
-                    product_id = product["id"] if isinstance(product, dict) and "id" in product else product[0]
-
-                cursor.execute(
-                    '''
-                    INSERT INTO prices (product_id, price, country, source_account, channel_name, message_id, message_date)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
-                    ''',
-                    (
-                        product_id,
-                        price,
-                        flag,
-                        account_id,
-                        source["channel_name"],
-                        source["message_id"],
-                        source["date"].isoformat()
-                    )
-                )
-        conn.commit()
-
-def extract_price(text):
-    match = re.search(r"\b(\d{4,7})\b", text.replace(" ", ""))
-    return int(match.group(1)) if match else None
-
-def extract_model_ner(text):
-    doc = nlp(text)
-    for ent in doc.ents:
-        if ent.label_ in ['PRODUCT', 'ORG', 'WORK_OF_ART']:
-            return ent.text.strip()
-
-    match = re.search(r"(iPhone|Samsung|Xiaomi|Redmi|Pixel)\s?([\w\s\-+]+)", text, re.I)
-    if match:
-        return f"{match.group(1)} {match.group(2)}".strip()
-
-    return None
-
-def parse_price_message(message):
-    model = extract_model_ner(message)
-    price = extract_price(message)
-    if not model or not price:
-        return None
-    return {
-        "brand": model.split()[0],
-        "model": model,
-        "price": price
-    }
-
-async def parse_all_channels():
+async def parse_all_channels(manual: bool = False):
+    from telethon_client import get_all_clients as get_cached_clients
+    from config import client_configs
     from database import get_allowed_sources
-    from telethon import TelegramClient
-    from telethon_client import get_all_clients
-    import os
-    from main import client_configs  # или импортируй client_configs напрямую, если нужно
 
-    clients = await get_all_clients(client_configs)
+    logger = logging.getLogger(__name__)
+    clients = await get_cached_clients(client_configs)
+    monitoring_stats = {}
 
     for client, label in clients:
-        sources = get_allowed_sources("channel")
-        for name in sources:
-            try:
-                entity = await client.get_entity(name)
-                async for message in client.iter_messages(entity, limit=50):
-                    if message.text:
-                        parse_message_text(message.text, {
-                            "account_id": label,
-                            "channel_id": entity.id,
-                            "channel_name": getattr(entity, "title", "unknown"),
-                            "message_id": message.id,
-                            "date": message.date
-                        })
-            except Exception as e:
-                print(f"Ошибка при парсинге {name}: {e}")
+        if manual:
+            logger.info(f"🧪 Ручной запуск парсинга для аккаунта: {label}")
+        else:
+            logger.info(f"🤖 Автоматический запуск парсинга для аккаунта: {label}")
+        logger.info(f"🔁 Обрабатывается аккаунт: {label}")
+
+        sources = get_allowed_sources("channel", label)
+        stats = await parse_all_channels_with_stats(client, sources, label, manual_trigger=True)
+        monitoring_stats[label] = stats
+
+        # ✅ Логируем результат в monitoring_log.json
+        log_monitoring_result(
+            channels=stats["channels"],
+            price_changes=stats["products"],
+            details=stats["details"]
+        )
+
+    return monitoring_stats
+
+
+# async-обёртка для was_channel_processed
+async def was_channel_processed_async(channel_id: int, account_id: str) -> bool:
+    from database import was_channel_processed
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, was_channel_processed, channel_id, account_id)
+
+# основная функция
+async def parse_all_channels_with_stats(client, sources, account_label, manual_trigger=False):
+
+    # Удалим дубли каналов по channel_id
+    sources = list({s["channel_id"]: s for s in sources}.values())
+
+    stats = {"channels": 0, "messages": 0, "products": 0, "details": []}
+
+    for source in sources:
+        channel_id = source["channel_id"]
+
+        if await was_channel_processed_async(channel_id, account_label):
+            logger.info(f"🔁 Источник {channel_id} уже обработан аккаунтом {account_label}")
+            continue
+
+        try:
+            entity = await client.get_entity(channel_id)
+        except Exception as e:
+            logger.warning(f"⚠️ Ошибка при получении entity для {channel_id}: {e}")
+            continue
+
+        logger.info(f"📥 Обработка канала: {getattr(entity, 'title', 'unknown')} (id={channel_id})")
+        stats["channels"] += 1
+
+        count = 0
+        updated_total = 0
+
+        try:
+            async for message in client.iter_messages(entity, limit=None):  # ✅ читаем всё
+                if not message.text:
+                    continue
+
+                count += 1
+                updated = parse_message_text(message.text, {
+                    "account_id": account_label,
+                    "channel_id": entity.id,
+                    "channel_name": getattr(entity, "title", "unknown"),
+                    "message_id": message.id,
+                    "date": message.date
+                })
+
+                if updated:
+                    logger.debug(f"✅ Добавлено товаров: {updated} из сообщения {message.id}")
+
+                updated_total += updated
+                stats["products"] += updated
+        except Exception as e:
+            logger.exception(f"🔥 Ошибка при чтении сообщений канала {channel_id}")
+            continue
+
+        stats["messages"] += count
+        stats["details"].append({
+            "channel_name": getattr(entity, "title", "unknown"),
+            "channel_id": entity.id,
+            "messages": count,
+            "products": updated_total
+        })
+
+        # ❗️Не помечаем канал как обработанный, если он почти пустой
+        if count < 2:
+            logger.warning(f"⚠️ Канал {channel_id} прочитан только на {count} сообщение — НЕ помечаем как обработанный")
+            continue
+
+        # ✅ Всё ок — можно пометить как обработанный
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, add_processed_channel, channel_id, account_label)
+
+    return stats
+

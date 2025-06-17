@@ -1,13 +1,8 @@
-# web/main.py
-
 from fastapi import FastAPI, Request, Query, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.routing import APIRouter
 import asyncio
-from telethon_client import start_telethon_monitoring
-from telethon import TelegramClient
 from utils import approve_message, get_unapproved_responses
 from database import get_connection
 
@@ -15,17 +10,6 @@ app = FastAPI()
 
 app.mount("/static", StaticFiles(directory="web/static"), name="static")
 templates = Jinja2Templates(directory="web/templates")
-
-# Настоящие данные для авторизации
-SESSION_NAME_1 = "session_ibestbuy_stor"
-API_ID_1 = 24689382
-API_HASH_1 = "de16c5259726045d3bf8bf46fc2c46ac"
-
-SESSION_NAME_2 = "session_apple_optom2"
-API_ID_2 = 28055972
-API_HASH_2 = "c9c5f1ab6dd0ecf4492d35749cfdd249"
-
-parser_running = False
 
 @app.get("/review")
 def review_responses(request: Request):
@@ -113,39 +97,6 @@ def get_products_by_brand(brand):
                 ORDER BY name ASC
             ''', (f'{brand} %',))
             return [row[0] for row in cur.fetchall()]
-
-@app.get("/parser-status", response_class=JSONResponse)
-async def parser_status():
-    return {"running": parser_running}
-
-@app.get("/run-parser", response_class=HTMLResponse)
-async def run_parser(request: Request):
-    global parser_running
-    if parser_running:
-        return RedirectResponse(url="/", status_code=303)
-
-    async def trigger_parsing():
-        global parser_running
-        parser_running = True
-        try:
-            from pathlib import Path
-            SESSIONS_DIR = Path("sessions")
-            SESSIONS_DIR.mkdir(exist_ok=True)
-
-            client1 = TelegramClient(SESSIONS_DIR / SESSION_NAME_1, API_ID_1, API_HASH_1)
-            client2 = TelegramClient(SESSIONS_DIR / SESSION_NAME_2, API_ID_2, API_HASH_2)
-
-            await client1.start()
-            await client2.start()
-            await start_telethon_monitoring(client1, "ibestbuy_store")
-            await start_telethon_monitoring(client2, "apple_optom2")
-            await client1.disconnect()
-            await client2.disconnect()
-        finally:
-            parser_running = False
-
-    asyncio.create_task(trigger_parsing())
-    return RedirectResponse(url="/", status_code=303)
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):

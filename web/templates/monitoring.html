@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Мониторинг цен</title>
+    <meta charset="UTF-8" />
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 2em; }
+        th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+        th { background-color: #f5f5f5; }
+
+        .toggle-container {
+            display: flex;
+            align-items: center;
+            margin-bottom: 1em;
+        }
+
+        .toggle-label {
+            margin-left: 10px;
+            font-weight: bold;
+        }
+
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 60px;
+            height: 32px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #dc3545;
+            transition: .4s;
+            border-radius: 34px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 26px;
+            width: 26px;
+            left: 4px;
+            bottom: 3px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: #28a745;
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(26px);
+        }
+
+        button {
+            padding: 8px 16px;
+            font-size: 14px;
+            cursor: pointer;
+        }
+
+        nav.top, nav.bottom {
+            margin: 1em 0;
+        }
+
+        nav a {
+            margin-right: 1em;
+        }
+    </style>
+</head>
+<body>
+    <nav class="top">
+        <a href="/">🏠 Главная</a>
+        <a href="/sources">📚 Источники</a>
+        <a href="/matrix">📊 Прайс-матрица</a>
+    </nav>
+
+    <h1>📡 Мониторинг цен</h1>
+
+    <div class="toggle-container">
+        <label class="switch">
+            <input type="checkbox" id="monitorToggle" {% if monitoring_enabled %}checked{% endif %}>
+            <span class="slider"></span>
+        </label>
+        <span id="monitorLabel" class="toggle-label">
+            {% if monitoring_enabled %}Мониторинг включен{% else %}Мониторинг выключен{% endif %}
+        </span>
+    </div>
+
+    <form action="/monitoring/run-parser" method="get">
+        <button type="submit">🔁 Запустить сбор цен вручную</button>
+    </form>
+    <button onclick="cleanProducts()">🧹 Очистить невалидные привязки</button>
+    <h2>📜 История мониторинга</h2>
+    {% if history %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Дата и время</th>
+                    <th>Каналов проверено</th>
+                    <th>Изменений цен</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for entry in history %}
+                    <tr>
+                        <td>{{ entry.timestamp }}</td>
+                        <td>{{ entry.channels_checked }}</td>
+                        <td>{{ entry.price_changes }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p>История пока пуста.</p>
+    {% endif %}
+
+    <nav class="bottom">
+        <a href="/">🏠 Главная</a>
+        <a href="/sources">📚 Источники</a>
+        <a href="/matrix">📊 Прайс-матрица</a>
+    </nav>
+
+    <script>
+        document.getElementById("monitorToggle").addEventListener("change", async function () {
+            try {
+                const res = await fetch("/monitoring/toggle", { method: "POST" });
+                const data = await res.json();
+                const label = document.getElementById("monitorLabel");
+                if (data.enabled) {
+                    label.textContent = "Мониторинг включен";
+                } else {
+                    label.textContent = "Мониторинг выключен";
+                }
+            } catch (e) {
+                alert("Ошибка при переключении мониторинга");
+                this.checked = !this.checked;
+            }
+        });
+    </script>
+<script>
+async function cleanProducts() {
+    try {
+        const res = await fetch("/admin/clean-products");
+        const data = await res.json();
+        if (data.ok) {
+            alert("🧹 Удалено привязок: " + data.deleted);
+            location.reload();
+        } else {
+            alert("⚠️ Ошибка при очистке.");
+        }
+    } catch (e) {
+        alert("❌ Ошибка запроса");
+    }
+}
+</script>
+
+</body>
+</html>
